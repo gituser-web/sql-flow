@@ -1,0 +1,37 @@
+server:
+  port: 7000
+
+spring:
+  application:
+    name: sql-flow
+  # 应用自身元数据：内嵌 H2 文件，零配置
+  datasource:
+    url: jdbc:h2:file:./data/sqlflow;MODE=MySQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  # 前后端不分离：静态资源直接由 Spring Boot 托管
+  web:
+    resources:
+      static-locations: classpath:/static/
+  mvc:
+    # 前端路由交给 index.html（SPA）
+    problemdetails:
+      enabled: false
+
+# SQL 流执行：层内并行的线程池大小
+sqlflow:
+  parallel-pool-size: 4
+  default-max-rows: 1000
+  hard-max-rows: 10000
