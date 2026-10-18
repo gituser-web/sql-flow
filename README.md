@@ -8,9 +8,10 @@
 
 | 部分 | 技术 | 版本 |
 |---|---|---|
-| 运行环境 | JDK | **21**（必须恰好 21；更高版本可能导致 Lombok 注解处理失效） |
+| 运行环境 | JDK | **21+**（优先 21；已在 JDK 25 上编译运行通过） |
 | 构建 | Maven | 3.9+（`./mvnw` 会自动查找，找不到则下载 3.9.9） |
 | 后端框架 | Spring Boot | 3.3.5（Spring Web + Spring Data JPA） |
+| 代码生成 | Lombok | 1.18.42（覆盖 Spring Boot 自带版本，以支持 JDK 25） |
 | SQL 解析 | JSqlParser | 4.9 |
 | 参数渲染 | MyBatis（仅用 SQL 渲染） | 3.5.16 |
 | 应用元数据库 | H2（内嵌文件，`./data/sqlflow`） | 随 Spring Boot 管理 |
@@ -27,7 +28,7 @@
 
 | 变量 | 作用 |
 |---|---|
-| `SQLFLOW_JDK_HOME` / `JAVA_HOME` | 指定 JDK 21 路径 |
+| `SQLFLOW_JDK_HOME` / `JAVA_HOME` | 指定 JDK（21+）路径 |
 | `SQLFLOW_MAVEN_HOME` | 指定本地 Maven 安装目录 |
 | `SQLFLOW_MVN_CACHE` | 自动下载 Maven 的缓存目录（默认 `~/.sqlflow-maven`） |
 

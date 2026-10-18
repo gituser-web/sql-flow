@@ -19,6 +19,9 @@
 
   <properties>
     <java.version>21</java.version>
+    <!-- Boot 3.3.5 自带的 Lombok 1.18.34 在 JDK 25 上编译直接崩（TypeTag :: UNKNOWN）；
+         1.18.42 支持 JDK 21–25，只装了更新版本的 JDK 也能编译 -->
+    <lombok.version>1.18.42</lombok.version>
   </properties>
 
   <dependencies>

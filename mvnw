@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # 自带环境解析的 Maven 启动器（本机没配 PATH 也能用）。
-#   JDK：项目要 **恰好 Java 21**（更新的 JDK 会让 Lombok 注解处理器不生效）。
-#        优先 21；找不到 21 才退而用 ≥21 的 JDK。
+#   JDK：要 Java 21+。优先 21；找不到 21 就用 ≥21 的（pom 里锁的 Lombok 1.18.42 支持到 JDK 25，已在 25 上编译+跑通）。
 #   mvn：优先 $SQLFLOW_MAVEN_HOME，其次 PATH 上的 mvn；都没有才下载一份到 $SQLFLOW_MVN_CACHE（默认 ~/.sqlflow-maven）。
 #   JDK 也可用 $SQLFLOW_JDK_HOME（或 $JAVA_HOME）直接指定。
 # 用法同 mvn：./mvnw spring-boot:run
@@ -23,8 +22,10 @@ SYSTEM_JAVA="$(command -v java 2>/dev/null || echo /usr/bin/java)"
 # 在常见位置找一个带 javac 的 JDK；$1="21" 只找恰好 21，$1="any" 找 ≥21
 find_jdk() {
   local d v
+  # ~/Library/... 是 IntelliJ「下载 JDK」装的位置，不在系统目录里
   for d in ${SQLFLOW_JDK_HOME:+"$SQLFLOW_JDK_HOME"} \
            /Library/Java/JavaVirtualMachines/*/Contents/Home \
+           "$HOME"/Library/Java/JavaVirtualMachines/*/Contents/Home \
            /usr/lib/jvm/*; do
     [ -x "$d/bin/javac" ] || continue
     v="$(java_major "$d/bin/java")"
@@ -43,10 +44,12 @@ pick_java_home() {
      && [ "$(java_major "$JAVA_HOME/bin/java")" -eq "$NEED_JAVA" ]; then return 0; fi
   if [ "$(java_major "$SYSTEM_JAVA")" -eq "$NEED_JAVA" ] && command -v javac >/dev/null 2>&1; then return 0; fi
   d="$(find_jdk 21 || true)"; [ -n "$d" ] && { export JAVA_HOME="$d"; return 0; }
+  # macOS 没装 21 时 `java_home -v 21` 也会返回别的版本（实测给 25），所以还要再核一下版本
   jh="$(/usr/libexec/java_home -v "$NEED_JAVA" 2>/dev/null || true)"
-  [ -n "$jh" ] && [ -x "$jh/bin/javac" ] && { export JAVA_HOME="$jh"; return 0; }
+  [ -n "$jh" ] && [ -x "$jh/bin/javac" ] && [ "$(java_major "$jh/bin/java")" -eq "$NEED_JAVA" ] \
+    && { export JAVA_HOME="$jh"; return 0; }
 
-  # ── 退而求其次：任何 ≥21 的 JDK（会和 Lombok 有风险，运行时提醒）──
+  # ── 退而求其次：任何 ≥21 的 JDK ──
   if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/javac" ] \
      && [ "$(java_major "$JAVA_HOME/bin/java")" -ge "$NEED_JAVA" ]; then return 0; fi
   if [ "$(java_major "$SYSTEM_JAVA")" -ge "$NEED_JAVA" ] && command -v javac >/dev/null 2>&1; then return 0; fi
