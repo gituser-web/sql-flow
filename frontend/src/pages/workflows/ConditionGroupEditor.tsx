@@ -105,7 +105,7 @@ export default function ConditionGroupEditor({ groups, cols, vars, onSave, onCan
                         {!noValue(c.op) && (
                           <>
                             <input className="input input--sm" style={{ width: 150 }} value={c.value}
-                              placeholder={c.op === '在…里' ? '$main.rows[*].id' : '值'}
+                              placeholder={(c.op === 'in' || c.op === 'not in') ? '$main.rows[*].id' : '值'}
                               onChange={e => setCond(gi, ci, { value: e.target.value })} />
                             <button type="button" className="btn btn--sm btn--ghost"
                               title="选一个前面层节点的输出当值"
@@ -130,7 +130,7 @@ export default function ConditionGroupEditor({ groups, cols, vars, onSave, onCan
 
           <div className="field-hint" style={{ marginTop: 10 }}>
             值可以直接填字面量，也可以引用前面层节点的输出：点「选引用」，或直接在值里打 <span className="mono">$</span>。
-            引用列表要用 <span className="mono">在…里（IN）</span>，例如 <span className="mono">order_id in ($main.rows[*].id)</span>。
+            引用列表要用 <span className="mono">在…里（IN）</span> 或 <span className="mono">不在…里（NOT IN）</span>，例如 <span className="mono">order_id in ($main.rows[*].id)</span>。
           </div>
         </div>
 

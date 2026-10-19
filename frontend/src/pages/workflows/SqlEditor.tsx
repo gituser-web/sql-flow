@@ -1,13 +1,19 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { getTables, probeColumns } from '../../api/client'
 import type { CondVar } from './ConditionDialog'
+import { afterInParen, wholeColumnInsert } from './sqlRefInsert'
 
 /*
  * SQL 输入框 + 提示。三种：
  * 一、SQL 关键字：不用 /，敲满 2 个字母按前缀提示（见 keywordToken）。
  * 二、「//」分两步：先列输入参数（选了插 `#{名字}`）和前面能引用的 SQL 节点；
- *    选了节点就插 `$节点.`，菜单接着换成**这个节点**的输出字段（见 fieldToken）
- *    → 插 `$节点.rows[0].列`；紧跟在 `in (` 后面插 `$节点.rows[*].列` 取整列。
+ *    选了节点就插 `$节点.`，菜单接着换成**这个节点**的输出字段（见 fieldToken）。
+ *    每个字段给两项，自己挑：
+ *      「列 · 第一行」     → 插 `$节点.rows[0].列`（单值，可接 = / > / between…）
+ *      「列 · 整列（IN）」 → 取整列，只补括号、不加 in（`in` / `not in` 自己写；见 sqlRefInsert.ts）：
+ *          光标前是 `(` → 插 `$节点.rows[*].列`（后面没有 `)` 就补上）
+ *          其余位置     → 插 `($节点.rows[*].列)`
+ *    默认高亮：紧跟在 `in (` 后面默认「整列」，其余默认「第一行」；↑↓ 换、搜索词照样按列名过滤。
  *    节点多、字段多也只探选中的那一个节点。
  * 三、「/」：/ 后面继续敲字就是搜索；提示什么看 / 在哪（见 contextAt）：
  *   空框敲 /        → 表；选了插 `select * from 表 where 1=1 limit 1`
@@ -153,8 +159,11 @@ function contextAt(text: string, at: number): Ctx {
   return ['from', 'join', 'update', 'into'].includes(last) ? 'table' : 'column'
 }
 
-/** text = 列表里显示的；insert = 真插进去的（不给就是 text）；table = 右边灰字（表名 / 节点名） */
-type Item = { kind: 'col' | 'table' | 'kw' | 'input' | 'out'; text: string; insert?: string; table?: string }
+/**
+ * text = 列表里显示的；insert = 真插进去的（不给就是 text）；table = 右边灰字（表名 / 节点名）；
+ * whole = 「//」第二步的「整列」：insert 是裸引用，插的时候按光标前后补 `( … )`
+ */
+type Item = { kind: 'col' | 'table' | 'kw' | 'input' | 'out'; text: string; insert?: string; table?: string; whole?: boolean }
 const KIND_LABEL = { col: '字段', table: '表', kw: '关键字', input: '参数', out: '节点' }
 const LIMIT = 50
 
@@ -241,6 +250,8 @@ const SqlEditor = forwardRef<HTMLTextAreaElement, Props>(function SqlEditor(
   const ctx: Ctx = token ? contextAt(value, token.at) : 'start'
   let items: Item[] = []
   let more = 0
+  /** 菜单刚弹出 / 换了搜索词时默认高亮哪一项 */
+  let defaultActive = 0
   if (token?.kind === 'kw') {
     // 只按前缀；敲的是大写就插大写
     const upper = q === q.toUpperCase()
@@ -257,15 +268,19 @@ const SqlEditor = forwardRef<HTMLTextAreaElement, Props>(function SqlEditor(
         .map(v => ({ kind: 'out' as const, text: v.label || v.name, insert: `$${v.name}.`, table: `第 ${v.layerNo} 层` })),
     ]
   } else if (token?.kind === 'field' && fieldVar) {
-    // 第二步：这个节点的输出列。紧跟在 `in (` 后面取整列，其余取第一行
-    const all = /\bin\s*\(\s*$/i.test(value.slice(0, token.at))
+    // 第二步：这个节点的输出列，每列两项：第一行（单值）/ 整列（IN，插的时候补括号）。
+    // 紧跟在 `in (` 后面默认高亮「整列」，其余默认「第一行」
+    const all = afterInParen(value.slice(0, token.at))
     const ready = outCols.key === outKey ? outCols.cols ?? [] : []
+    const hits = filterSort(ready, q)
     items = [
-      ...filterSort(ready, q).map(c => ({
-        kind: 'col' as const, text: c, insert: `$${fieldVar.name}.rows[${all ? '*' : 0}].${c}`, table: all ? '整列' : '第 1 行',
-      })),
+      ...hits.flatMap(c => [
+        { kind: 'col' as const, text: c, insert: `$${fieldVar.name}.rows[0].${c}`, table: '第一行' },
+        { kind: 'col' as const, text: c, insert: `$${fieldVar.name}.rows[*].${c}`, table: '整列（IN）', whole: true },
+      ]),
       ...('rowcount'.includes(q.toLowerCase()) ? [{ kind: 'out' as const, text: 'rowCount', insert: `$${fieldVar.name}.rowCount`, table: '行数' }] : []),
     ]
+    if (all && hits.length > 0) defaultActive = 1
   } else if (token) {
     const colItems: Item[] = ctx !== 'column' ? [] : cols.flatMap(g => filterSort(g.cols, q).map(c => ({ kind: 'col' as const, text: c, table: g.table })))
     // 字段位置只给已引用表的字段，不列表
@@ -276,7 +291,8 @@ const SqlEditor = forwardRef<HTMLTextAreaElement, Props>(function SqlEditor(
   // 关键字没匹配就整个不显示；「/」「//」没匹配要显示原因
   const showMenu = open && (token.kind !== 'kw' || items.length > 0)
 
-  useEffect(() => { setActive(0) }, [q, tokenKey])
+  // 换了搜索词 / 换了菜单、或字段刚读出来 → 回到默认项
+  useEffect(() => { setActive(defaultActive) }, [q, tokenKey, defaultActive])
 
   function detect(text: string, caret: number): Token | null {
     return fieldToken(text, caret, nodeVars.map(v => v.name)) ?? slashToken(text, caret) ?? keywordToken(text, caret)
@@ -293,6 +309,7 @@ const SqlEditor = forwardRef<HTMLTextAreaElement, Props>(function SqlEditor(
     if (!node || !token) return
     let insert = it.insert ?? (it.kind === 'table' && ctx === 'start' ? `select * from ${it.text} where 1=1 limit 1` : it.text)
     const caret = node.selectionStart ?? value.length
+    if (it.whole) insert = wholeColumnInsert(value.slice(0, token.at), value.slice(caret), insert)
     // 关键字后面带个空格，接着就能写
     if (it.kind === 'kw' && !/^\s/.test(value.slice(caret))) insert += ' '
     const next = value.slice(0, token.at) + insert + value.slice(caret)

@@ -15,9 +15,10 @@ export const OPS = [
   { v: '>=', label: '大于等于' },
   { v: '<', label: '小于' },
   { v: '<=', label: '小于等于' },
-  { v: 'contains', label: '包含' },
-  { v: 'not contains', label: '不包含' },
-  { v: '在…里', label: '在…里（IN）' },
+  { v: 'like', label: 'LIKE' },
+  { v: 'not like', label: 'NOT LIKE' },
+  { v: 'in', label: '在…里（IN）' },
+  { v: 'not in', label: '不在…里（NOT IN）' },
   { v: 'is not empty', label: '非空' },
   { v: 'is empty', label: '为空' },
 ]
@@ -42,19 +43,20 @@ function rhsOf(c: Cond): string {
 /**
  * 拼成**合法的 SQL**。算子的 v 只是内部标识（和条件节点的英文关键字同名，便于统一），
  * 中文 label 只给人看；落到 SQL 要翻译：
- *   is not empty → is not null，is empty → is null，contains → like '%…%'，
- *   not contains → not like '%…%'，在…里 → in (…)。
+ *   is not empty → is not null，is empty → is null，like → like，not like → not like
+ *   （值里自己写了 % 就原样用，比如 '%abc' / 'abc%'；完全不含 % 才在两侧补 %…%），in → in (…)，not in → not in (…)。
  * （这些不是 SQL 关键字，不能原样拼进 SQL。）
  */
 export function condSql(c: Cond): string {
   const lit = c.value.trim()
-  const likeArg = isRef(c.value) ? c.value.trim() : quote(`%${lit}%`)
+  const likeArg = isRef(c.value) ? c.value.trim() : quote(lit.includes('%') ? lit : `%${lit}%`)
   switch (c.op) {
     case 'is not empty': return `${c.field} is not null`
     case 'is empty': return `${c.field} is null`
-    case '在…里': return `${c.field} in (${rhsOf(c)})`
-    case 'contains': return `${c.field} like ${likeArg}`
-    case 'not contains': return `${c.field} not like ${likeArg}`
+    case 'in': return `${c.field} in (${rhsOf(c)})`
+    case 'not in': return `${c.field} not in (${rhsOf(c)})`
+    case 'like': return `${c.field} like ${likeArg}`
+    case 'not like': return `${c.field} not like ${likeArg}`
     default: return `${c.field} ${c.op} ${rhsOf(c)}`
   }
 }

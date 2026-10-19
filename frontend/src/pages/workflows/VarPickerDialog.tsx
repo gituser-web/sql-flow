@@ -209,7 +209,7 @@ export default function VarPickerDialog({ vars, bare = false, onPick, onClose }:
                       ? '这个节点查出来的行数（数字）。'
                       : scope === 'all'
                         ? bare
-                          ? `「${curItem.col}」这一列的所有值（列表），配合「在…里（IN）」用。`
+                          ? `「${curItem.col}」这一列的所有值（列表），配合「在…里（IN）」或「不在…里（NOT IN）」用。`
                           : `「${curItem.col}」这一列的所有值，插成 \`in (?, ?, …)\` —— 直接接在 \`where 某列 \` 后面就能用。`
                         : `第 ${scope === 'first' ? 1 : rowIdx + 1} 行的「${curItem.col}」，单个值。`}
                 </div>
