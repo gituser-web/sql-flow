@@ -37,8 +37,8 @@ class ConditionEvaluatorTest {
         assertTrue(ev().eval("$o.rowCount > 0"));
         assertFalse(ev().eval("$e.rowCount > 0"));
         assertTrue(ev().eval("$o.rows[0].status == 'paid'"));
-        assertTrue(ev().eval("$o.rows[*].status 包含 'unpaid'"));
-        assertTrue(ev().eval("$e 为空"));
+        assertTrue(ev().eval("$o.rows[*].status contains 'unpaid'"));
+        assertTrue(ev().eval("$e is empty"));
     }
 
     @Test
@@ -68,7 +68,9 @@ class ConditionEvaluatorTest {
     void keywordsInsideQuotesAreValues() {
         // 引号里的 and 不是关键字；'' 是转义的 '
         assertTrue(ev().eval("$o.rows[0].note == 'it''s a and b'"));
-        assertTrue(ev().eval("$o.rows[*].note 包含 ' and '"));
+        assertTrue(ev().eval("$o.rows[*].note contains ' and '"));
+        assertFalse(ev().eval("$o.rows[0].note == 'is not empty or not contains'"));   // 引号里的关键字是值
+        assertTrue(ev().eval("$o.rows[*].note contains 'a and b' or $e is not empty"));
     }
 
     @Test
@@ -81,9 +83,63 @@ class ConditionEvaluatorTest {
     void badShapesRejected() {
         assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rowCount > 0 and"));
         assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("($o.rowCount > 0"));
-        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rowCount > 0) or $e 为空"));
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rowCount > 0) or $e is empty"));
         assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status == 'paid"));
         assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rowCount > 0 and 1 == 1"));
+    }
+
+    @Test
+    void englishKeywords() {
+        assertTrue(ev().eval("$o is not empty"));
+        assertFalse(ev().eval("$e is not empty"));
+        assertFalse(ev().eval("$o is empty"));
+        assertTrue(ev().eval("$o.rows[0].status contains 'pa'"));
+        assertFalse(ev().eval("$o.rows[0].status contains 'un'"));
+        assertTrue(ev().eval("$o.rows[0].status not contains 'un'"));      // not contains 先于 contains 匹配
+        assertFalse(ev().eval("$o.rows[*].status not contains 'unpaid'"));
+        assertTrue(ev().eval("$o.rows[*].status not contains 'refund'"));
+        assertTrue(ev().eval("$o.rows[0].id contains 1"));                 // 数字 / 裸词右值
+        assertTrue(ev().eval("$o.rows[0].status contains'pa'"));           // 关键字后直接跟引号
+    }
+
+    @Test
+    void englishKeywordsAreCaseInsensitive() {
+        assertTrue(ev().eval("$e IS EMPTY"));
+        assertTrue(ev().eval("$o Is Not  Empty"));
+        assertTrue(ev().eval("$o.rows[*].status CONTAINS 'unpaid'"));
+        assertTrue(ev().eval("$o.rows[0].status NOT Contains 'un'"));
+        assertTrue(ev().eval("($e IS EMPTY OR $e.rowCount > 0) AND $o.rows[0].status Not Contains 'x'"));
+    }
+
+    @Test
+    void keywordOpsWithAndOrSplitCorrectly() {
+        // is not empty / not contains 里没有 and / or，不能被切坏；和 and / or 组合也要对
+        assertTrue(ev().eval("$o is not empty and $o.rows[0].status not contains 'un'"));
+        assertTrue(ev().eval("$e is not empty or $o.rows[*].note contains 'and'"));
+        List<ReferenceRenderer.ParsedRef> refs = ConditionEvaluator.validate("$o is not empty and ($e is empty or $o.rows[0].status not contains 'x')");
+        assertEquals(List.of("o", "e", "o"), refs.stream().map(ReferenceRenderer.ParsedRef::name).toList());
+    }
+
+    @Test
+    void chineseKeywordsRejected() {
+        for (String expr : List.of("$o.rows[*].status 包含 'unpaid'", "$o.rows[*].status 不包含 'x'", "$e 为空", "$o 非空")) {
+            BadRequestException ex = assertThrows(BadRequestException.class, () -> ev().eval(expr));
+            assertTrue(ex.getMessage().contains("英文"), ex.getMessage());
+            assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate(expr));
+        }
+        BadRequestException ex = assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$e 为空"));
+        assertTrue(ex.getMessage().contains("is empty"), ex.getMessage());
+        ex = assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status 不包含 'x'"));
+        assertTrue(ex.getMessage().contains("not contains"), ex.getMessage());
+    }
+
+    @Test
+    void keywordMisuseRejected() {
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status contains"));
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status not contains"));
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o is empty 1"));
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status containsx 'a'"));
+        assertThrows(BadRequestException.class, () -> ConditionEvaluator.validate("$o.rows[0].status like 'a'"));
     }
 
     @Test

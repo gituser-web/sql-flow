@@ -4,17 +4,32 @@ import com.sqlflow.common.BadRequestException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * if 条件求值。见 DESIGN §4.3。确定性求值，绝不返回 false、绝不回落模型：
  * 解析不出直接抛 {@link BadRequestException}（400）。
- * <p>原子判断支持 {@code == != > >= < <=}、{@code 包含}/{@code 不包含}、{@code 为空}/{@code 非空}、
- * 以及单个 {@code $引用} 非空即真；左边必须是 {@code $引用}。
+ * <p>原子判断支持 {@code == != > >= < <=}、{@code contains}/{@code not contains}、
+ * {@code is empty}/{@code is not empty}，以及单个 {@code $引用} 非空即真；左边必须是 {@code $引用}。
  * 原子之间可用 {@code and} / {@code or} / 括号组合（and 优先，和 SQL 一样）。
+ * <p>规则里的关键字**只认英文**（不分大小写）；旧的中文写法（包含 / 不包含 / 为空 / 非空）直接报 400。
  */
 public final class ConditionEvaluator {
 
     private static final String[] COMPARISON_OPS = {"==", "!=", ">=", "<=", ">", "<"};
+
+    /** 关键字算子（不分大小写，词之间允许多个空白）。顺序有讲究：not contains 必须先于 contains。 */
+    private static final Pattern IS_EMPTY = Pattern.compile("(?i)is\\s+empty");
+    private static final Pattern IS_NOT_EMPTY = Pattern.compile("(?i)is\\s+not\\s+empty");
+    /** 关键字后面必须是空白 / 引号 / 结尾，避免把 containsX 这种裸词当成关键字 */
+    private static final Pattern NOT_CONTAINS = Pattern.compile("(?i)^not\\s+contains(?=[\\s'\"]|$)");
+    private static final Pattern CONTAINS = Pattern.compile("(?i)^contains(?=[\\s'\"]|$)");
+    /** 已废弃的中文关键字：遇到就明确报错，告诉用户换成哪个英文写法 */
+    private static final String[][] LEGACY_CN = {
+            {"不包含", "not contains"}, {"包含", "contains"}, {"为空", "is empty"}, {"非空", "is not empty"}};
+    private static final String KEYWORD_HINT =
+            "支持的写法: == != > >= < <=、contains、not contains、is empty、is not empty";
 
     private final VariableTable vars;
 
@@ -169,31 +184,14 @@ public final class ConditionEvaluator {
         ReferenceRenderer.ParsedRef ref = parseLeft(s);
         String rest = s.substring(ref.end()).trim();
 
-        if (rest.isEmpty()) {
-            return isNonEmpty(ref);
-        }
-        if (rest.equals("为空")) {
-            return !isNonEmpty(ref);
-        }
-        if (rest.equals("非空")) {
-            return isNonEmpty(ref);
-        }
-        if (rest.startsWith("不包含")) {
-            return !contains(ref, literalString(rest.substring("不包含".length()).trim(), s));
-        }
-        if (rest.startsWith("包含")) {
-            return contains(ref, literalString(rest.substring("包含".length()).trim(), s));
-        }
-        for (String op : COMPARISON_OPS) {
-            if (rest.startsWith(op)) {
-                String rhs = rest.substring(op.length()).trim();
-                if (rhs.isEmpty()) {
-                    throw new BadRequestException("条件表达式缺少右值: " + s);
-                }
-                return compare(ref, op, rhs);
-            }
-        }
-        throw new BadRequestException("无法解析条件表达式: " + s);
+        OpMatch m = matchOp(rest, s);
+        return switch (m.op()) {
+            case "bare", "is not empty" -> isNonEmpty(ref);
+            case "is empty" -> !isNonEmpty(ref);
+            case "contains" -> contains(ref, literalString(m.rhs(), s));
+            case "not contains" -> !contains(ref, literalString(m.rhs(), s));
+            default -> compare(ref, m.op(), m.rhs());
+        };
     }
 
     private static ReferenceRenderer.ParsedRef validateAtom(String expression) {
@@ -201,21 +199,51 @@ public final class ConditionEvaluator {
         ReferenceRenderer.ParsedRef ref = parseLeft(s);
         String rest = s.substring(ref.end()).trim();
 
-        if (rest.isEmpty() || rest.equals("为空") || rest.equals("非空")) {
-            return ref;
+        OpMatch m = matchOp(rest, s);
+        if ((m.op().equals("contains") || m.op().equals("not contains")) && m.rhs().isEmpty()) {
+            throw new BadRequestException("条件表达式缺少右值（" + m.op() + " 后面要跟值）: " + s);
         }
-        if (rest.startsWith("不包含") || rest.startsWith("包含")) {
-            return ref;
+        return ref;
+    }
+
+    /** 左边引用后面那段解析出的算子 + 右值（op = bare / is empty / is not empty / contains / not contains / 比较符） */
+    private record OpMatch(String op, String rhs) {}
+
+    /** 识别算子。求值和保存校验共用这一份，保证两边认的写法完全一致。 */
+    private static OpMatch matchOp(String rest, String whole) {
+        if (rest.isEmpty()) {
+            return new OpMatch("bare", "");
+        }
+        for (String[] cn : LEGACY_CN) {
+            if (rest.startsWith(cn[0])) {
+                throw new BadRequestException("条件规则必须用英文关键字，不支持「" + cn[0] + "」，请改成 "
+                        + cn[1] + "（包含 → contains，不包含 → not contains，为空 → is empty，非空 → is not empty）: " + whole);
+            }
+        }
+        if (IS_NOT_EMPTY.matcher(rest).matches()) {
+            return new OpMatch("is not empty", "");
+        }
+        if (IS_EMPTY.matcher(rest).matches()) {
+            return new OpMatch("is empty", "");
+        }
+        Matcher nc = NOT_CONTAINS.matcher(rest);
+        if (nc.find()) {
+            return new OpMatch("not contains", rest.substring(nc.end()).trim());
+        }
+        Matcher c = CONTAINS.matcher(rest);
+        if (c.find()) {
+            return new OpMatch("contains", rest.substring(c.end()).trim());
         }
         for (String op : COMPARISON_OPS) {
             if (rest.startsWith(op)) {
-                if (rest.substring(op.length()).trim().isEmpty()) {
-                    throw new BadRequestException("条件表达式缺少右值: " + s);
+                String rhs = rest.substring(op.length()).trim();
+                if (rhs.isEmpty()) {
+                    throw new BadRequestException("条件表达式缺少右值: " + whole);
                 }
-                return ref;
+                return new OpMatch(op, rhs);
             }
         }
-        throw new BadRequestException("无法解析条件表达式: " + s);
+        throw new BadRequestException("无法解析条件表达式（" + KEYWORD_HINT + "）: " + whole);
     }
 
     private static String normalize(String expression) {
@@ -234,7 +262,7 @@ public final class ConditionEvaluator {
 
     /**
      * 解析左边的 {@code $引用}。带 {@code .字段} 的走 {@link ReferenceRenderer#parseRef}；
-     * 只有 {@code $name}（无字段）时返回 kind="bare"（用于「非空即真 / 为空 / 非空」）。
+     * 只有 {@code $name}（无字段）时返回 kind="bare"（用于「单引用非空即真 / is empty / is not empty」）。
      */
     private static ReferenceRenderer.ParsedRef parseLeft(String s) {
         int p = 1; // s[0] == '$'

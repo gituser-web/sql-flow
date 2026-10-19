@@ -15,14 +15,14 @@ export const OPS = [
   { v: '>=', label: '大于等于' },
   { v: '<', label: '小于' },
   { v: '<=', label: '小于等于' },
-  { v: '包含', label: '包含' },
-  { v: '不包含', label: '不包含' },
+  { v: 'contains', label: '包含' },
+  { v: 'not contains', label: '不包含' },
   { v: '在…里', label: '在…里（IN）' },
-  { v: '非空', label: '非空' },
-  { v: '为空', label: '为空' },
+  { v: 'is not empty', label: '非空' },
+  { v: 'is empty', label: '为空' },
 ]
 
-export const noValue = (op: string) => op === '非空' || op === '为空'
+export const noValue = (op: string) => op === 'is not empty' || op === 'is empty'
 
 /** 数字不加引号，其他加单引号 */
 export function quote(v: string): string {
@@ -40,20 +40,21 @@ function rhsOf(c: Cond): string {
 }
 
 /**
- * 拼成**合法的 SQL**。注意算子的中文名只是给人看的标签，落到 SQL 要翻译：
- *   非空 → is not null，为空 → is null，包含 → like '%…%'，不包含 → not like '%…%'，
- *   在…里 → in (…)。
- * （`非空` / `包含` 这套写法是**条件节点**那个表达式语言的，不能直接出现在 SQL 里。）
+ * 拼成**合法的 SQL**。算子的 v 只是内部标识（和条件节点的英文关键字同名，便于统一），
+ * 中文 label 只给人看；落到 SQL 要翻译：
+ *   is not empty → is not null，is empty → is null，contains → like '%…%'，
+ *   not contains → not like '%…%'，在…里 → in (…)。
+ * （这些不是 SQL 关键字，不能原样拼进 SQL。）
  */
 export function condSql(c: Cond): string {
   const lit = c.value.trim()
   const likeArg = isRef(c.value) ? c.value.trim() : quote(`%${lit}%`)
   switch (c.op) {
-    case '非空': return `${c.field} is not null`
-    case '为空': return `${c.field} is null`
+    case 'is not empty': return `${c.field} is not null`
+    case 'is empty': return `${c.field} is null`
     case '在…里': return `${c.field} in (${rhsOf(c)})`
-    case '包含': return `${c.field} like ${likeArg}`
-    case '不包含': return `${c.field} not like ${likeArg}`
+    case 'contains': return `${c.field} like ${likeArg}`
+    case 'not contains': return `${c.field} not like ${likeArg}`
     default: return `${c.field} ${c.op} ${rhsOf(c)}`
   }
 }

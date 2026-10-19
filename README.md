@@ -91,8 +91,12 @@ sqlite3 data/demo.db < demo-sqlite.sql
 
 ```
 $a.rowCount > 0          $a.rowCount == 0        $a.rows[0].status != 'paid'
-$a.rows[*].tag 包含 'vip'  $a 为空    $a 非空     $a          // 单引用：非空即真
+$a.rows[*].tag contains 'vip'    $a.rows[0].tag not contains 'test'
+$a is empty    $a is not empty    $a          // 单引用：非空即真
+($a.rowCount > 0 and $a.rows[0].amount >= 300) or $a.rows[*].order_no contains 'A100'
 ```
+
+关键字只认英文（`contains` / `not contains` / `is empty` / `is not empty` / `and` / `or`），不分大小写；可以用 `and` / `or` / 括号组合，`and` 优先。中文写法（包含 / 为空 等）会直接报错。
 
 if 判定为 **false → 整个 SQL 流立即结束**（返回已产生的最后一层输出）。
 

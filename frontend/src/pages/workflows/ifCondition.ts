@@ -30,21 +30,22 @@ export const OPS_COMPARE = [
   { v: '<', label: '小于' },
   { v: '<=', label: '小于等于' },
 ]
+/** v 是写进表达式的关键字（规则只认英文），label 只是界面上给人看的 */
 const OPS_TEXT = [
-  { v: '包含', label: '包含' },
-  { v: '不包含', label: '不包含' },
-  { v: '非空', label: '非空' },
-  { v: '为空', label: '为空' },
+  { v: 'contains', label: '包含' },
+  { v: 'not contains', label: '不包含' },
+  { v: 'is not empty', label: '非空' },
+  { v: 'is empty', label: '为空' },
 ]
 
-/** 每种判断对象能用哪些算子 —— 和后端能求值的一一对应（整列只能 包含 / 非空 这类） */
+/** 每种判断对象能用哪些算子 —— 和后端能求值的一一对应（整列只能 contains / is not empty 这类） */
 export function opsFor(c: Pick<IfCond, 'target' | 'scope'>) {
   if (c.target === 'rowCount') return OPS_COMPARE
   if (c.target === 'truncated') return OPS_COMPARE.slice(0, 2)
   return c.scope === 'any' ? OPS_TEXT : [...OPS_COMPARE, ...OPS_TEXT]
 }
 
-export const noValue = (op: string) => op === '非空' || op === '为空'
+export const noValue = (op: string) => op === 'is not empty' || op === 'is empty'
 
 export const newIfCond = (node: string): IfCond =>
   ({ node, target: 'rowCount', col: '', scope: 'first', op: '>', value: '0' })
@@ -120,12 +121,18 @@ function splitTop(s: string): { parts: string[]; joins: ('and' | 'or')[] } | nul
   return parts.every(p => p) ? { parts, joins } : null
 }
 
-const ATOM = /^\$([A-Za-z_][A-Za-z0-9_]*)\.(rowCount|truncated|rows\[(0|\*)\]\.([A-Za-z_][A-Za-z0-9_]*))\s*(==|!=|>=|<=|>|<|不包含|包含|非空|为空)\s*(.*)$/
+/** 关键字不分大小写（和后端一致），但字段名 / rowCount 这些要区分大小写，所以只给关键字做大小写无关 */
+const ci = (w: string) => w.replace(/[a-z]/g, ch => `[${ch}${ch.toUpperCase()}]`)
+const KW_OPS = [`${ci('not')}\\s+${ci('contains')}`, ci('contains'), `${ci('is')}\\s+${ci('not')}\\s+${ci('empty')}`, `${ci('is')}\\s+${ci('empty')}`]
+const ATOM = new RegExp(
+  String.raw`^\$([A-Za-z_][A-Za-z0-9_]*)\.(rowCount|truncated|rows\[(0|\*)\]\.([A-Za-z_][A-Za-z0-9_]*))\s*` +
+  `(==|!=|>=|<=|>|<|(?:${KW_OPS.join('|')})(?![A-Za-z0-9_]))\\s*(.*)$`)
 
 function parseAtom(s: string, nodes: string[]): IfCond | null {
   const m = ATOM.exec(s.trim())
   if (!m || !nodes.includes(m[1])) return null
-  const [, node, what, idx, col, op, rest] = m
+  const [, node, what, idx, col, rawOp, rest] = m
+  const op = rawOp.toLowerCase().replace(/\s+/g, ' ')   // 关键字不分大小写，统一成编辑器用的写法
   const target: IfTarget = what === 'rowCount' ? 'rowCount' : what === 'truncated' ? 'truncated' : 'col'
   const c: IfCond = { node, target, col: col ?? '', scope: idx === '*' ? 'any' : 'first', op, value: '' }
   if (!opsFor(c).some(o => o.v === op)) return null

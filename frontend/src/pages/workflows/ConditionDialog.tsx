@@ -230,7 +230,7 @@ export default function ConditionDialog({ initial, vars, onSave, onCancel }: {
             </label>
             {mode === 'visual'
               ? <pre className="code" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{expr}</pre>
-              : <div className="field-hint">判断写成 <span className="mono">$节点.rowCount &gt; 0</span>、<span className="mono">$节点.rows[0].字段 == '值'</span>、<span className="mono">$节点.rows[*].字段 包含 '值'</span>，之间用 and / or / 括号连。</div>}
+              : <div className="field-hint">判断写成 <span className="mono">$节点.rowCount &gt; 0</span>、<span className="mono">$节点.rows[0].字段 == '值'</span>、<span className="mono">$节点.rows[*].字段 contains '值'</span>、<span className="mono">$节点 is empty</span>，关键字只认英文（contains / not contains / is empty / is not empty），之间用 and / or / 括号连。</div>}
             <div className="field-hint">判定为<b>真</b> → 继续往下走；为<b>假</b> → 结束整个 SQL 流。</div>
           </div>
         )}

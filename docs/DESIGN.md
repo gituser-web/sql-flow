@@ -152,13 +152,15 @@ sql-flow/
 $name.rowCount > 0
 $name.rows[0].status == 'paid'
 $name.rowCount != 0
-$name.rows[*].col 包含 'x'      // 任一行包含
+$name.rows[*].col contains 'x'      // 任一行包含 x
+$name.rows[0].col not contains 'x'  // 第 0 行不包含 x
 $name.rowCount >= 5   <=   <
-$name 为空         $name 非空
+$name is empty         $name is not empty
 $name                              // 单引用：非空即真
-($a.rowCount > 0 and $a.rows[0].amount >= 300) or $a.rows[*].order_no 包含 'A100'   // 组合
+($a.rowCount > 0 and $a.rows[0].amount >= 300) or $a.rows[*].order_no contains 'A100'   // 组合
 ```
 - 上面每一行是一个**判断**；判断之间用 `and` / `or` / 括号组合，**and 优先**（和 SQL 一样），不分大小写。引号里的 and/or 是值，不是关键字；`''` 是转义的 `'`。
+- 关键字**只认英文**（`contains` / `not contains` / `is empty` / `is not empty`，以及 `and` / `or`），不分大小写；中文写法（包含 / 不包含 / 为空 / 非空）不支持，会直接报 400。
 - 左边必须是 `$引用`，右边是 `'字符串'` / 数字 / 裸词。
 - 编辑器的「可视化」拼出来的就是这套（`ifCondition.ts`），也能读回去；读不回去的手写写法只能「直接写表达式」。
 - **解析不出 → 直接报错**（400），不要当 false，也不要交给模型。
