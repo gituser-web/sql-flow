@@ -490,10 +490,12 @@ public class WorkflowService {
                 if (expr == null || expr.isBlank()) {
                     throw new BadRequestException("stages", "IF 条件不能为空");
                 }
-                ReferenceRenderer.ParsedRef ref = ConditionEvaluator.validate(expr);
-                if (!availableNames.contains(ref.name())) {
-                    throw new BadRequestException("stages",
-                            "IF 引用了不可用的变量: $" + ref.name() + "（只能引用更早层的节点）");
+                // 组合条件里每个判断的引用都要可用
+                for (ReferenceRenderer.ParsedRef ref : ConditionEvaluator.validate(expr)) {
+                    if (!availableNames.contains(ref.name())) {
+                        throw new BadRequestException("stages",
+                                "IF 引用了不可用的变量: $" + ref.name() + "（只能引用更早层的节点）");
+                    }
                 }
             } else {
                 throw new BadRequestException("stages", "未知的 stage 类型: " + sd.getKind());

@@ -507,3 +507,9 @@ pre.code {
 .slash-note--head { padding: 4px 8px 2px; font-size: 11px; }
 .bind-cell { display: flex; align-items: center; gap: 8px; }
 .bind-cell select { width: 220px; flex: none; }
+/* 条件行里的控件按内容宽度排一行（.input 默认 width:100% 会让每个下拉各占一行） */
+.vq-cond .input, .cge-head .input { width: auto; flex: none; }
+.cond-modal.cge { width: 780px; }
+.cond-modal.cge { width: 860px; }
+.cond-modal .vq-cond { flex-wrap: nowrap; }
+.cond-modal .vq-cond .btn { flex: none; }
